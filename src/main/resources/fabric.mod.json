@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "minecraft-chat-optimization-mod",
+  "version": "${version}",
+  "name": "Minecraft Chat Optimization Mod",
+  "description": "Rewrite outgoing chat messages by configurable rules, managed with the /tlc client command.",
+  "authors": [
+    "TheLittle_cat"
+  ],
+  "contact": {
+    "homepage": "https://github.com/TheLittilecat/chat-optimization-mod"
+  },
+  "license": "CC0-1.0",
+  "icon": "assets/minecraft-chat-optimization-mod/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "minecraft.chat.optimization.mod.ChatReplacerMod"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.15",
+    "minecraft": ">=1.19 <1.22",
+    "java": ">=17",
+    "fabric-api": "*"
+  }
+}
