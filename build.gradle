@@ -1,0 +1,150 @@
+plugins {
+	id 'net.fabricmc.fabric-loom' version "${loom_version}"
+	id 'maven-publish'
+}
+
+/**
+ * 多版本构建。
+ *
+ * 同一个 MC API 语法通常横跨好几个大版本，所以按「API 世代」划分 variant，
+ * 而不是每个大版本一份代码。这里只做版本字符串 -> 世代名的映射，
+ * 真正与版本相关的代码在 src/variants/<世代>/java 下。
+ */
+def mcVersion = project.minecraft_version
+
+// 唯一断点在 1.19：fabric-message-api-v1 与 fabric-command-api-v2 都从 1.19 起才有。
+// 1.19 之前（1.14.4~1.18.2）没有聊天事件 API，只能 mixin 拦截；
+// 客户端指令则走 fabric-command-api-v1 的 client.command.v1.ClientCommandManager。
+def variantOf(String v) {
+	def early = ["1.14", "1.15", "1.16", "1.17", "1.18"]
+	if (early.any { v.startsWith(it) }) return "legacy"
+	return "current"                                                     // 1.19+ 与 26.x 同名 API
+}
+
+def javaReleaseOf(String v) {
+	def parts = v.tokenize('.')
+	if (parts[0] as int >= 26) return 25
+	if (parts[0] as int != 1) return 21
+	def minor = parts[1] as int
+	if (minor <= 16) return 8
+	if (minor == 17) return 16
+	if (minor <= 20) return 17
+	return 21
+}
+
+// 声明"本 jar 实际能保证的加载范围"。
+// 编译产物里的 MC 引用是 intermediary 名，跨小版本通常没问题，
+// 但跨大版本不能保证（例如 26.x 用的是 Identifier / Minecraft.gui，1.19~1.21 根本不存在）。
+// 所以默认只声明到"当前编译版本的同一次版本系列"（~x.y.z = >=x.y.z <x.(y+1).0）。
+// 想放宽到整个 API 世代时把下面换成 mcRangeOf(variant) 即可。
+def mcRangeOf(String variant) {
+	switch (variant) {
+		case "legacy": return ">=1.14 <=1.18.2"
+		default: return ">=1.19"
+	}
+}
+
+def safeRangeOf(String v) {
+	return "~" + v
+}
+
+def variant = variantOf(mcVersion)
+def javaRelease = javaReleaseOf(mcVersion)
+def mcRange = safeRangeOf(mcVersion)
+
+project.ext.modVariant = variant
+project.ext.modJavaRelease = javaRelease
+
+logger.lifecycle("构建目标: MC ${mcVersion} -> 世代 ${variant}, Java release ${javaRelease}")
+
+repositories {
+	// Add repositories to retrieve artifacts from in here.
+	// You should only use this when depending on other mods because
+	// Loom adds the essential maven repositories to download Minecraft and libraries from automatically.
+	// See https://docs.gradle.org/current/userguide/declaring_repositories.html
+	// for more information about repositories.
+}
+
+loom {
+	splitEnvironmentSourceSets()
+
+	mods {
+		"minecraft-chat-optimization-mod" {
+			sourceSet sourceSets.main
+			sourceSet sourceSets.client
+		}
+	}
+}
+
+// 每个世代只把自己那一份适配实现编进来
+sourceSets.client.java.srcDirs += "src/variants/${variant}/java"
+
+dependencies {
+	// To change the versions see the gradle.properties file
+	minecraft "com.mojang:minecraft:${project.minecraft_version}"
+	// 26.x 的 MC 本身就是未混淆的（官方名即类名），Loom 会拒绝再套一层 mojmap：
+	//   "Cannot use Mojang mappings in a non-obfuscated environment"
+	// 所以这里不要声明 mappings，直接用官方名（Component / Identifier / Minecraft.gui 等）。
+	// 1.14~1.18 的老版本在 Downloads/111/ 下各自的官方模板里构建（那里用 yarn）。
+	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+
+	// Fabric API. This is technically optional, but you probably want it anyway.
+	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+}
+
+processResources {
+	def version = project.version
+	inputs.property "version", version
+	inputs.property "mcRange", mcRange
+	inputs.property "javaRelease", javaRelease
+
+	filesMatching("fabric.mod.json") {
+		expand "version": version, "mcRange": mcRange, "javaRelease": javaRelease
+	}
+
+	// mixin 配置里的 compatibilityLevel 必须和编译用的 Java 版本一致，否则运行时会被拒绝加载
+	filesMatching("**/*.mixins.json") {
+		expand "javaLevel": "JAVA_${javaRelease}"
+	}
+
+	// AutoForge: 手写资源与 DataGen 产物可能同名(去重见 pipeline.purge_datagen_duplicates),
+	// EXCLUDE 保留先到的那份,不让 duplicate entry 炸掉构建。
+	duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+tasks.withType(JavaCompile).configureEach {
+	it.options.release = javaRelease
+}
+
+java {
+	// Loom will automatically attach sourcesJar to a RemapSourcesJar task and to the "build" task
+	// if it is present.
+	// If you remove this line, sources will not be generated.
+	withSourcesJar()
+}
+
+jar {
+	def projectName = project.name
+	inputs.property "projectName", projectName
+
+	from("LICENSE") {
+		rename { "${it}_$projectName"}
+	}
+}
+
+// configure the maven publication
+publishing {
+	publications {
+		create("mavenJava", MavenPublication) {
+			from components.java
+		}
+	}
+
+	// See https://docs.gradle.org/current/userguide/publishing_maven.html for information on how to set up publishing.
+	repositories {
+		// Add repositories to publish to here.
+		// Notice: This block does NOT have the same function as the block in the top level.
+		// The repositories here will be used for publishing your artifact, not for
+		// retrieving dependencies.
+	}
+}

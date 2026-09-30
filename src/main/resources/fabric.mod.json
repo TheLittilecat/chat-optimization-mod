@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "id": "minecraft-chat-optimization-mod",
+  "version": "${version}",
+  "name": "Minecraft Chat Optimization Mod",
+  "description": "按方案替换本机发出的聊天消息，并可追加末尾内容。",
+  "authors": [
+    "TheLittle_cat"
+  ],
+  "contact": {
+    "homepage": "https://github.com/TheLittilecat/chat-optimization-mod"
+  },
+  "license": "CC0-1.0",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "minecraft.chat.optimization.mod.ExampleMod"
+    ],
+    "client": [
+      "minecraft.chat.optimization.mod.client.ExampleModClient"
+    ]
+  },
+  "mixins": [
+    "minecraft-chat-optimization-mod.mixins.json",
+    {
+      "config": "minecraft-chat-optimization-mod.client.mixins.json",
+      "environment": "client"
+    }
+  ],
+  "depends": {
+    "fabricloader": ">=0.15",
+    "minecraft": "${mcRange}",
+    "java": ">=${javaRelease}",
+    "fabric-api": "*"
+  }
+}
